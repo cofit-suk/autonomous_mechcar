@@ -13,6 +13,6 @@
     <arg name="image" value="$(arg image)" />
   </include>
   <node name="converter" pkg="converter" type="converter"></node>
-  <node name="sub" pkg="darknet_project" type="sub" output="screen"></node>
+  <node name="sub" pkg="darknet_project" type="sub.py" output="screen"></node>
   <node name="usb_cam" pkg="usb_cam" type="usb_cam_node"></node>
 </launch>

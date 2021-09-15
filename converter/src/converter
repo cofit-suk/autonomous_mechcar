@@ -5,22 +5,64 @@ import sys
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
+import numpy as np
+import pdb
 
+width = 520
+height = 220
+pts1 = np.float32([[115,300],[480,300],[37,450],[555,450]])
+w_padding = 100
+h_padding = 200
+
+# w_padding = 250
+# h_padding = 430
+
+# width = 50
+# height = 50
+# pts1 = np.float32([[230, 360], [343, 360], [207, 468], [345, 468]])
+
+#pts2 = np.float32([[w_padding,h_padding],[width+w_padding,h_padding],[w_padding,height+h_padding],[width+w_padding,height+h_padding]])
+
+width = 210
+height = 360
+
+#pts1 = np.float32([[115,300],[480,300],[37,450],[555,450]])
+pts1 = np.float32([[290,100],[350,100],[225,460],[435,460]])
+# pts2 = np.float32([[0,0],[width,0],[0,height],[width,height]])
+pts2 = np.float32([[100,100],[width+100,100],[100,height+100],[width+100,height+100]])
+
+#pdb.set_trace()
 class changer():
 	def __init__(self):
 		self.sub = rospy.Subscriber("/usb_cam/image_raw", Image, self.callback, queue_size = 1)
 		self.pub = rospy.Publisher("/bgr", Image, queue_size = 1)
+		# publish check point img
+		self.pub2 = rospy.Publisher("/check_img", Image, queue_size = 1)
 	def callback(self, data):
 		bridge = CvBridge()
-		img = bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
-		bgrimg = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-		cvimg = bridge.cv2_to_imgmsg(bgrimg, encoding="rgb8")
+		img = bridge.imgmsg_to_cv2(data, desired_encoding='rgb8')
+		#bgrimg = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+		bgrimg = img
+		#Draw circle 
+		cv2.circle(bgrimg, (pts1[0][0],pts1[0][1]), 3, (255,0,0),-1)
+		cv2.circle(bgrimg, (pts1[1][0],pts1[1][1]), 3, (0,255,0),-1)
+		cv2.circle(bgrimg, (pts1[2][0],pts1[2][1]), 3, (0,0,255),-1)
+		cv2.circle(bgrimg, (pts1[3][0],pts1[3][1]), 3, (0,255,255),-1)
+
+		M = cv2.getPerspectiveTransform(pts1,pts2)
+		#pdb.set_trace()
+		img_result = cv2.warpPerspective(bgrimg, M, (640,480))
+		# bgrimg = img_result
+		# #pdb.set_trace()
+		# img_result = img
+		# #use ipm
+		cvimg = bridge.cv2_to_imgmsg(img_result, encoding="rgb8")
+		#cvimg = bridge.cv2_to_imgmsg(bgrimg, encoding="rgb8")
+		check_img = bridge.cv2_to_imgmsg(bgrimg, encoding="rgb8")
 		self.pub.publish(cvimg)
+		self.pub2.publish(check_img)
 	
 rospy.init_node("converter")
 ch = changer()
 rospy.loginfo("run")
 rospy.spin()
-
-
-

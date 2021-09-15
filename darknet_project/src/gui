@@ -1,0 +1,229 @@
+#!/usr/bin/env python
+
+import sys
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QRadioButton, QPushButton, QButtonGroup
+from PyQt5.QtGui import QPixmap, QPainter, QPen, QFont, QImage
+
+import rospy
+import cv2
+from sensor_msgs.msg import Image
+from std_msgs.msg import Int16, Int16MultiArray, Float32MultiArray
+from cv_bridge import CvBridge
+from darknet_ros_msgs.msg import BoundingBoxes
+
+WINDOW_SIZE = 800
+INITIAL_PIXMAP_SIZE_W = 640
+INITIAL_PIXMAP_SIZE_H = 480
+COLOR_DIC = { 0:Qt.black, 1:Qt.blue, 2:Qt.red }
+IMAGE_TOPIC_NAME = '/bgr'
+POINTS_PUB_NAME = '/points'   #Int16MultiArray
+ACTION_PUB_NAME = '/action'   #Int16
+global start_flag
+start_flag = False
+START = 1
+STOP = 0
+
+YAWTEST_TOPIC_NAME = '/yawtest'   # Float32MultiArray
+XDYD_TOPIC_NAME = '/xdyd'
+XNYN_TOPIC_NAME = '/darknet_ros/bounding_boxes'
+# PIXMAP_IMAGE = '/home/rtx2070/unnamed.jpg'
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super(MainWindow, self).__init__()
+        self.points = [0,]
+        self.colors = []
+        self.loaded_image = QImage(QPixmap(INITIAL_PIXMAP_SIZE_W,INITIAL_PIXMAP_SIZE_H).toImage())
+        self.xlos = 240
+        self.ylos = 240
+        self.xd = 0
+        self.yd = 0
+        self.sent = 0
+        self.init_ui()
+        self.init_button()
+        self.setMouseTracking(True)
+        self.init_image()
+
+    def init_ui(self):
+        self.setGeometry(0, 0, WINDOW_SIZE, WINDOW_SIZE)  # x, y, w, h
+        self.setWindowTitle('Path Planning GUI')
+        self.status_bar = self.statusBar()
+
+    def init_image(self):
+        self.makePixmap()
+        self.pix_width = self.pixmap.width()
+        self.pix_height = self.pixmap.height()
+
+        self.label = QLabel(self)
+        self.label.setPixmap(self.pixmap)
+        self.label.resize(self.pix_width, self.pix_height)
+        self.label.setAttribute(Qt.WA_TransparentForMouseEvents)  # Enable mousetracking over pixmap
+
+    def load_image(self):
+        self.makePixmap()
+        qp = QPainter(self.pixmap)
+        for iter in range(self.points[0]):
+            qp.setPen(QPen(COLOR_DIC[self.colors[iter]], 8))
+            qp.drawPoint(self.points[(iter*2)+1], self.points[(iter+1)*2])
+            qp.setFont(QFont('Arial', 16))
+            qp.drawText(self.points[(iter*2)+1], self.points[(iter+1)*2]+20, '{}'.format(iter))
+
+        if self.modegroup.checkedId() or self.sent:
+            qp.setPen(QPen(Qt.magenta, 8))
+            qp.drawPoint(self.xlos, self.ylos)
+            qp.setFont(QFont('Arial', 8))
+            qp.drawText(self.xlos, self.ylos+10, 'los')
+            qp.setPen(QPen(Qt.magenta, 3))
+            qp.drawLine(self.points[1], self.points[2], self.xlos, self.ylos)
+
+            qp.setPen(QPen(Qt.green, 4))
+            qp.drawPoint(self.xd, self.yd)
+            qp.setFont(QFont('Arial', 8))
+            qp.drawText(self.xd, self.yd-10, 'd')
+            qp.setPen(QPen(Qt.green, 2))
+            qp.drawLine(self.points[1], self.points[2], self.xd, self.yd)
+
+        qp.end
+        self.label.setPixmap(self.pixmap)
+
+    def init_button(self):
+        btn_left = QRadioButton('Black', self)
+        btn_right = QRadioButton('Red', self)
+        btn_robot = QRadioButton('Blue', self)
+        btn_modepath = QRadioButton('Path mode', self)
+        btn_modetest = QRadioButton('Test mode', self)
+        btn_modepath.clicked.connect(self.eraseAction)
+        btn_modetest.clicked.connect(self.eraseAction)
+        btn_erase = QPushButton('Erase (&1)', self)
+        btn_send = QPushButton('Send (&2)', self)
+        btn_start = QPushButton('Start (&3)', self)
+        btn_stop = QPushButton('Stop (&4)', self)
+        btn_erase.clicked.connect(self.eraseAction)
+        btn_send.clicked.connect(self.sendAction)
+        btn_start.clicked.connect(self.startAction)
+        btn_stop.clicked.connect(self.stopAction)
+
+        self.btngroup = QButtonGroup()
+        self.btngroup.addButton(btn_left, 0)
+        self.btngroup.addButton(btn_right, 2)
+        self.btngroup.addButton(btn_robot, 1)
+        btn_left.setChecked(True)
+
+        self.modegroup = QButtonGroup()
+        self.modegroup.addButton(btn_modepath, 0)
+        self.modegroup.addButton(btn_modetest, 1)
+        btn_modepath.setChecked(True)
+
+        btn_start.setStyleSheet('background-color: green; color: white')
+        btn_stop.setStyleSheet('background-color: red')
+
+        btn_left.move(50, 650)
+        btn_robot.move(150, 650)
+        btn_right.move(250, 650)
+        btn_erase.move(350, 650)
+        btn_send.move(450, 650)
+        btn_start.move(350, 750)
+        btn_stop.move(450, 750)
+        btn_modepath.move(100, 720)
+        btn_modetest.move(200, 720)
+
+    def eraseAction(self):
+        if not self.modegroup.checkedId():
+            self.points = [0,]
+            self.colors = []
+        else:
+            self.points = [3, 0, 0, 0, 0, 0, 0]
+            self.colors = [0, 1, 2]
+
+    def sendAction(self):
+        point_data = Int16MultiArray()
+        point_data.data = self.points
+        self.pub_sendpoints.publish(point_data)
+        global start_flag
+        start_flag = True
+        self.sent = 1
+        print("send")
+
+    def startAction(self):
+        point_data = Int16MultiArray()
+        point_data.data = self.points
+        self.pub_sendpoints.publish(point_data)
+        global start_flag
+        start_flag = True
+        self.sent = 1
+        self.pub_action.publish(START)
+        print("start")
+
+    def stopAction(self):
+        self.pub_action.publish(STOP)
+        print("stop")
+
+    def mouseMoveEvent(self, event):
+        str = "X = {}, y = {}, global = {}, {}".format(event.x(), event.y(), event.globalX(), event.globalY())
+        self.status_bar.showMessage(str)
+
+    def mousePressEvent(self, event):
+        if event.x()<self.pix_width and event.y()<self.pix_height:
+            if not self.modegroup.checkedId():
+                str = "x = {}, y = {}".format(event.x(), event.y())
+                self.points[0] += 1
+                self.points.extend([event.x(), event.y()])
+                self.colors.append(self.btngroup.checkedId())
+                print(str)
+            else:
+                sc = self.btngroup.checkedId()
+                str = "x = {}, y = {}".format(event.x(), event.y())
+                self.points[(sc*2)+1] = event.x()
+                self.points[(sc+1)*2] = event.y()
+                print(str)
+
+            print(self.points)
+            print(self.colors)
+
+    def makePixmap(self):
+        self.pixmap = QPixmap()
+        self.pixmap = QPixmap.fromImage(self.loaded_image)
+
+    def rosrun(self):
+        rospy.init_node('gui')
+        rospy.loginfo('gui_run')
+        sub = rospy.Subscriber(IMAGE_TOPIC_NAME, Image, self.callback)
+        sub_yawtest = rospy.Subscriber(YAWTEST_TOPIC_NAME, Float32MultiArray, self.callback_yawtest)
+        sub_xdyd = rospy.Subscriber(XDYD_TOPIC_NAME, Float32MultiArray, self.callback_xdyd)
+        sub_xnyn = rospy.Subscriber(XNYN_TOPIC_NAME, BoundingBoxes, self.locoation_callback)
+        self.pub_sendpoints = rospy.Publisher(POINTS_PUB_NAME, Int16MultiArray, queue_size = 1)
+        self.pub_action = rospy.Publisher(ACTION_PUB_NAME, Int16, queue_size = 1)
+
+    def callback(self, images):
+        bridge = CvBridge()
+        cv2image = bridge.imgmsg_to_cv2(images, "rgb8")
+        height, width, channel = cv2image.shape
+        bytes_per_line = 3 * width
+        self.loaded_image = QImage(cv2image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        self.load_image()
+
+    def callback_yawtest(self, los):
+        self.xlos = los.data[0]
+        self.ylos = los.data[1]
+
+    def callback_xdyd(self, xdyd):
+        self.xd = xdyd.data[0]
+        self.yd = xdyd.data[1]
+
+    def locoation_callback(self, box):
+        global start_flag
+        if start_flag:
+            for data in box.bounding_boxes:
+                if data.Class == "robot":
+                    self.points[1] = (data.xmin + data.xmax) / 2
+                    self.points[2] = (data.ymin + data.ymax) / 2
+                    #self.length = ((data.xmax - data.xmin) + (data.ymax - data.ymin))/2
+                    #print("length : %f" % self.length)
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    mainWindow = MainWindow()
+    mainWindow.show()
+    mainWindow.rosrun()
+    sys.exit(app.exec_())
