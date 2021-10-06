@@ -14,7 +14,7 @@ TH = 10
 
 # yaw gain parameter
 yaw_pgain = 0.7
-yaw_dgain = 0.05
+yaw_dgain = 0.1
 yaw_igain = 0.01
 
 # distance gain parameter
@@ -23,7 +23,7 @@ dis_dgain = 0.0
 dis_igain = 0.0
 
 # length parameter
-k_gain = 1.5
+k_gain = 0.7
 
 # way point list
 global way_point
@@ -72,12 +72,12 @@ class Control(Yaw):
         if self.turn_flag:            
             #target_angle = rospy.get_param('target_yaw')
             #print(target_angle)
-            vel_amount = self.pid_angle(target_angle)        
+            vel_amount, yaw_error = self.pid_angle(target_angle)        
             self.l_vel = self.l_vel+vel_amount
             self.r_vel = self.r_vel-vel_amount
 
             # contorl speed limit
-            speed_lim = 100
+            speed_lim = 110
             self.l_vel = speed_lim if self.l_vel > speed_lim else self.l_vel
             self.r_vel = speed_lim if self.r_vel > speed_lim else self.r_vel
             self.l_vel = -speed_lim if self.l_vel < -speed_lim else self.l_vel
@@ -89,12 +89,28 @@ class Control(Yaw):
         self.old_distance = self.distance
 
         # move next way point
-        if (abs(way_point[2]-self.x) < 20) and (abs(way_point[3]-self.y)<20):
+        if (abs(way_point[2]-self.x) < 10) and (abs(way_point[3]-self.y)<10):
             #pdb.set_trace()
             del way_point[0:2]
         
-        msg.data[0] = self.l_vel + self.base_speed
-        msg.data[1] = self.r_vel + self.base_speed
+        #acc speed
+        # th_ac = 50
+        # if (abs(way_point[2]-self.x) < th_ac) and (abs(way_point[3]-self.y)<th_ac):
+        #     if (abs(way_point[0]-self.x) > th_ac) and (abs(way_point[1]-self.y)>th_ac):
+        #         if (abs(yaw_error) < 2.0):
+        #             self.base_speed = 120
+        #             print("acc_velocity")
+        # else:
+        #     self.base_speed = 50
+        
+        # for speed up when robot drive straight
+        if abs(self.l_vel) < 5:
+            speed_weight = 100
+        else:
+            speed_weight = 0
+               
+        msg.data[0] = self.l_vel + self.base_speed + speed_weight
+        msg.data[1] = self.r_vel + self.base_speed + speed_weight
         
         # final way_point stop robot
         if(len(way_point)==2):
@@ -125,6 +141,13 @@ class Control(Yaw):
 
         # yaw error    
         yaw_error = target_yaw - self.yaw_angle
+        # NOTE plus about -180, 180
+        if target_yaw > 0 and yaw_error > 180:
+            yaw_error = yaw_error - 360
+        elif target_yaw < 0 and yaw_error < -180:
+            yaw_error = yaw_error + 360
+
+        print("yaw_error %f" % yaw_error)     
         # p contorl
         p_amount_yaw = yaw_pgain * yaw_error
 
@@ -142,11 +165,11 @@ class Control(Yaw):
 
 
         # Reset l_vel, r_vel -> 0.0 stop overshoot
-        if yaw_error <1.5 and yaw_error > -1.5:
+        if yaw_error <2.5 and yaw_error > -2.5:
             self.l_vel = 0.0
             self.r_vel = 0.0
             #amount_yaw = 0.0
-        if yaw_error <0.5 and yaw_error > -0.5:
+        if yaw_error <1.5 and yaw_error > -1.5:
             yaw_error = 0.0
             self.l_vel = 0.0
             self.r_vel = 0.0
@@ -154,7 +177,7 @@ class Control(Yaw):
             # if yaw_error is stable
             # self.turn_flag = False
             
-        return amount_yaw
+        return amount_yaw, yaw_error
 
     def pid_distance(self, target_distance):
         # distance error
@@ -227,6 +250,6 @@ if __name__ == '__main__':
         # start_flag -> if gui send 
         if start_flag:
             control.drive()
-            print(way_point)
+            #print(way_point)
         #rospy.spin()
         r.sleep()

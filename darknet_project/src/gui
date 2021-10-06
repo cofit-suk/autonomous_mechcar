@@ -19,6 +19,7 @@ COLOR_DIC = { 0:Qt.black, 1:Qt.blue, 2:Qt.red }
 IMAGE_TOPIC_NAME = '/bgr'
 POINTS_PUB_NAME = '/points'   #Int16MultiArray
 ACTION_PUB_NAME = '/action'   #Int16
+SAVE_DIRECTORY = '/home/suk/images'
 global start_flag
 start_flag = False
 START = 1
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
         self.xd = 0
         self.yd = 0
         self.sent = 0
+        self.captures = 0
         self.init_ui()
         self.init_button()
         self.setMouseTracking(True)
@@ -99,10 +101,12 @@ class MainWindow(QMainWindow):
         btn_send = QPushButton('Send (&2)', self)
         btn_start = QPushButton('Start (&3)', self)
         btn_stop = QPushButton('Stop (&4)', self)
+        btn_capture = QPushButton('Capture', self)
         btn_erase.clicked.connect(self.eraseAction)
         btn_send.clicked.connect(self.sendAction)
         btn_start.clicked.connect(self.startAction)
         btn_stop.clicked.connect(self.stopAction)
+        btn_capture.clicked.connect(self.captureAction)
 
         self.btngroup = QButtonGroup()
         self.btngroup.addButton(btn_left, 0)
@@ -125,6 +129,7 @@ class MainWindow(QMainWindow):
         btn_send.move(450, 650)
         btn_start.move(350, 750)
         btn_stop.move(450, 750)
+        btn_capture.move(550, 750)
         btn_modepath.move(100, 720)
         btn_modetest.move(200, 720)
 
@@ -158,6 +163,12 @@ class MainWindow(QMainWindow):
     def stopAction(self):
         self.pub_action.publish(STOP)
         print("stop")
+
+    def captureAction(self):
+        rgbimage = cv2.cvtColor(self.cv2image, cv2.COLOR_BGR2RGB)
+        cv2.imwrite('{}/image{}.jpg'.format(SAVE_DIRECTORY, self.captures), rgbimage)
+        self.captures += 1
+        print("'image{}.jpg' saved".format(self.captures-1))
 
     def mouseMoveEvent(self, event):
         str = "X = {}, y = {}, global = {}, {}".format(event.x(), event.y(), event.globalX(), event.globalY())
@@ -197,10 +208,10 @@ class MainWindow(QMainWindow):
 
     def callback(self, images):
         bridge = CvBridge()
-        cv2image = bridge.imgmsg_to_cv2(images, "rgb8")
-        height, width, channel = cv2image.shape
+        self.cv2image = bridge.imgmsg_to_cv2(images, "rgb8")
+        height, width, channel = self.cv2image.shape
         bytes_per_line = 3 * width
-        self.loaded_image = QImage(cv2image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        self.loaded_image = QImage(self.cv2image.data, width, height, bytes_per_line, QImage.Format_RGB888)
         self.load_image()
 
     def callback_yawtest(self, los):

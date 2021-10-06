@@ -69,7 +69,7 @@ def corcov(x, y):
 
 if __name__ == '__main__':
     rospy.init_node('yaw')
-    rospy.loginfo('yaw_run')
+    #rospy.loginfo('yaw_run')
     yaw = Yaw()
     yaw.rosrun()
     rospy.spin()
