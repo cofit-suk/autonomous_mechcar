@@ -15,7 +15,7 @@ class Yaw(object):
         self.yd = 0
         self.psi = 0
 
-    def final(self, x_1, y_1, x_2, y_2, x_r, y_r,k_p,l_p):
+    def final(self, x_1, y_1, x_2, y_2, x_r, y_r, k_p, l_p):
         K = k_p# coefficient
         L = l_p  # robot length
 

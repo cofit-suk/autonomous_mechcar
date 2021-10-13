@@ -8,14 +8,18 @@ from sensor_msgs.msg import Imu
 from std_msgs.msg import Float64 
 import pdb
 from yaw import Yaw
+import time
+import time as d_time
+from matplotlib import pyplot as plt
+
 GOAL_X = 200
 GOAL_Y = 290
 TH = 10
 
 # yaw gain parameter
-yaw_pgain = 0.7
-yaw_dgain = 0.1
-yaw_igain = 0.01
+yaw_pgain = 0.4
+yaw_dgain = 0.0
+yaw_igain = 0.0
 
 # distance gain parameter
 dis_pgain = 0.1
@@ -34,6 +38,17 @@ way_point = [0,0,1,1]
 global start_flag
 start_flag = False
 
+# timer flag
+global detect_flag, drive_flag
+detect_flag = False
+drive_flag = False
+
+global detect_time 
+detect_time = 0.0
+
+global x_list, y_list
+x_list = y_list =[]
+
 class Control(Yaw):
     def __init__(self):
         super(Control, self).__init__()
@@ -51,7 +66,7 @@ class Control(Yaw):
         self.go_cnt = 0
         self.distance = 0.0
         self.old_distance = 0.0
-        self.base_speed = 80
+        self.base_speed = 50
         # for set param 'target_yaw'
         rospy.set_param('target_yaw', 0)
     
@@ -77,7 +92,7 @@ class Control(Yaw):
             self.r_vel = self.r_vel-vel_amount
 
             # contorl speed limit
-            speed_lim = 110
+            speed_lim = 70
             self.l_vel = speed_lim if self.l_vel > speed_lim else self.l_vel
             self.r_vel = speed_lim if self.r_vel > speed_lim else self.r_vel
             self.l_vel = -speed_lim if self.l_vel < -speed_lim else self.l_vel
@@ -104,8 +119,8 @@ class Control(Yaw):
         #     self.base_speed = 50
         
         # for speed up when robot drive straight
-        if abs(self.l_vel) < 5:
-            speed_weight = 100
+        if abs(self.l_vel) < 2:
+            speed_weight = 170
         else:
             speed_weight = 0
                
@@ -135,6 +150,8 @@ class Control(Yaw):
                 self.y = (data.ymin + data.ymax) / 2
                 self.length = ((data.xmax - data.xmin) + (data.ymax - data.ymin))/2
                 print("length : %f" % self.length)
+                x_list.append(self.x)
+                y_list.append(self.y)
             #rospy.loginfo('class = {}, x = {}, y = {}, size = {}, prob. = {:.3f}'.format(data.Class, self.x, self.y, self.size, data.probability))
     
     def pid_angle(self, target_yaw):
@@ -229,9 +246,10 @@ def point_callback(data):
     del(point_data[0])
     #pdb.set_trace()
     # update global variable
-    global way_point, start_flag
+    global way_point, start_flag, plt_way_point
     start_flag = True
     way_point = point_data
+    plt_way_point = point_data
     print(point_data)
     #rospy.loginfo('yaw_data = %f' % self.yaw_angle)
 
@@ -246,10 +264,30 @@ if __name__ == '__main__':
     # about loop rate -> 10ms, 0.01s
     r = rospy.Rate(10)
     #global start_flag
+    global start 
+    #start = 0.0
     while not rospy.is_shutdown():
         # start_flag -> if gui send 
         if start_flag:
             control.drive()
+            if drive_flag == False:
+                start = time.time()
+                print(start)
+                drive_flag = True
             #print(way_point)
         #rospy.spin()
         r.sleep()
+    #end = time.time()
+    #global start
+    #pdb.set_trace()
+
+
+
+    # for i in range((len(plt_way_point)/2)):
+    #     plt.plot(plt_way_point[0],plt_way_point[1],'ro')
+    #     plt.axis([0, 640, 0, 480])
+    #     del plt_way_point[0:2]
+    # plt.plot(x_list, y_list,'bo')
+    # plt.show()
+    # print("drive_time %f"% (end-start))
+    # print("detect_time %f"% detect_time)
